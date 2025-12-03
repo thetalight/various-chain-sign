@@ -1,9 +1,13 @@
 use alloy::{
-    consensus::{EthereumTxEnvelope, SignableTransaction, TxEip4844Variant}, network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder}, node_bindings::Anvil, primitives::{FixedBytes, U256}, providers::{Provider, ProviderBuilder}, rpc::types::TransactionRequest, signers::{local::PrivateKeySigner, Signature, SignerSync}
+    consensus::{EthereumTxEnvelope, SignableTransaction, TxEip4844Variant},
+    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
+    node_bindings::Anvil,
+    primitives::{FixedBytes, U256, keccak256},
+    providers::{Provider, ProviderBuilder},
+    rpc::types::TransactionRequest,
+    signers::{Signature, SignerSync, local::PrivateKeySigner},
 };
 
-
-// cargo test --package various-chain-sign --lib -- eth::test_sign --exact --show-output 
 #[test]
 fn test_sign() {
     const PRIVATE_KEY_BYTES: [u8; 32] = [
@@ -17,7 +21,7 @@ fn test_sign() {
 
     let r = s.recover_address_from_prehash(&msg_hash).unwrap();
     assert_eq!(r, signer.address());
-    
+
     assert_eq!(
         "74f51a3690a3f50ed813a9c68be84312abc50e5b97c6b07cccc7df19c8000c232a294312e635ce893b25e8fc56d7c5593a2bbc30b9f1517b8965a91530588fa41b",
         hex::encode(s.as_bytes())
@@ -39,7 +43,6 @@ async fn test_eth() {
         .wallet(signer_alice.clone())
         .connect_http(rpc_url.clone());
 
-
     let tx = TransactionRequest::default()
         .with_to(bob)
         .with_nonce(0)
@@ -49,14 +52,17 @@ async fn test_eth() {
         .with_max_priority_fee_per_gas(1_000_000_000)
         .with_max_fee_per_gas(20_000_000_000);
 
-    let tx_envelope = {
+    let _tx_envelope = {
         let tx_unsigned = tx.clone().build_unsigned().unwrap();
         // tx_unsigned.set_chain_id_checked(1);
 
-        let signature_hash = tx_unsigned.signature_hash();
-        let signature = signer_alice.sign_hash_sync(&signature_hash).unwrap();
-        let tx_envelope_0: EthereumTxEnvelope<TxEip4844Variant> = tx_unsigned.clone().into_signed(signature).into();
+        //  let signature_hash = tx_unsigned.signature_hash();
+        let rlp_encode = tx_unsigned.encoded_for_signing();
+        let signature_hash = keccak256(rlp_encode);
 
+        let signature = signer_alice.sign_hash_sync(&signature_hash).unwrap();
+        let tx_envelope_0: EthereumTxEnvelope<TxEip4844Variant> =
+            tx_unsigned.clone().into_signed(signature).into();
 
         let wallet = EthereumWallet::from(signer_alice.clone());
         let tx_envelope_1 = <EthereumWallet as NetworkWallet<Ethereum>>::sign_transaction_from(
@@ -64,35 +70,35 @@ async fn test_eth() {
             alice, // 地址只是用来索引
             tx_unsigned,
         )
-        .await.unwrap();
+        .await
+        .unwrap();
 
         assert_eq!(tx_envelope_0, tx_envelope_1);
 
         tx_envelope_0
     };
-
-
 }
 
-
 #[test]
-fn test_sign1() {
-    // println!("{}","e47b07120b3251540e3277cb41faca97a8729b96c90c0a1fb6c7a36b22427d5a50791570d368278b65dd0a7f56beab4e39034d05b6383d79b155581fd313df0a".len());
-    let bytes1 = hex::decode(b"57979955d10883aaa7a0ccd4347211aac4044fdb441f17e767578e862945c17b").unwrap();
-    let signer = PrivateKeySigner::from_slice(&bytes1).unwrap();
-    assert_eq!(signer.address().to_string(), "0xa652886Cbd45B63C2F3382066C7CB378E66D280b");
-   // println!("pk:{:?}", signer.public_key().to_string().split_at(2).1);
-    println!("pk:{:?}",hex::decode(signer.public_key().to_string().split_at(2).1).unwrap()); // [2, 235, 151, 45, 68, 211, 89, 224, 191, 74, 14, 76, 39, 177, 219, 72, 219, 86, 191, 185, 16, 197, 146, 16, 228, 135, 198, 194, 172, 39, 201, 6, 147]
+fn test_sign_n60() {
+    let bytes =
+        hex::decode(b"57979955d10883aaa7a0ccd4347211aac4044fdb441f17e767578e862945c17b").unwrap();
+    let signer = PrivateKeySigner::from_slice(&bytes).unwrap();
+    assert_eq!(
+        signer.address().to_string(),
+        "0xa652886Cbd45B63C2F3382066C7CB378E66D280b"
+    );
 
-    let data = hex::decode(b"71d027c296147783637ed2c26544bafef53b4cef1ab8250830175b149f38c5e5").unwrap();
-    let msg_hash = FixedBytes::from_slice(&data);
-
+    // soft
+    let data =
+        hex::decode(b"71d027c296147783637ed2c26544bafef53b4cef1ab8250830175b149f38c5e5").unwrap();
+    let msg_hash = keccak256(data);
     let s = signer.sign_hash_sync(&msg_hash).unwrap();
     println!("signature:{:?}", s.as_bytes());
 
-    let sb = hex::decode(b"e47b07120b3251540e3277cb41faca97a8729b96c90c0a1fb6c7a36b22427d5a50791570d368278b65dd0a7f56beab4e39034d05b6383d79b155581fd313df0a1b").unwrap();
-    let s0 : Signature = Signature::try_from(sb.as_slice()).unwrap();
-
-    let r = s0.recover_address_from_prehash(&msg_hash).unwrap();
-    assert_eq!(r, signer.address());
+    // n60
+    let sign_bytes = hex::decode(b"66789af020efbcb4507ee1b0a3cfc2460ad00703342817287f6c5a3c92eae7cc3514c8ba36c6bc1ba0c4fd79bd57938088b8bce6bf3f31c5e3f571cc718f97c71c").unwrap();
+    let s: Signature = Signature::try_from(sign_bytes.as_slice()).unwrap();
+    let expect = s.recover_address_from_prehash(&msg_hash).unwrap();
+    assert_eq!(expect, signer.address());
 }
