@@ -10,6 +10,7 @@ use bitcoin::{
 };
 use secp256k1::{Message, Secp256k1};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Utxo {
@@ -122,6 +123,11 @@ fn test_btc_tx() {
         let sig_hash0 = LegacySighash::from_engine(enc); // double hash
         println!("sig_hash:{:?}", sig_hash.to_string());
         assert_eq!(sig_hash, sig_hash0);
+
+        use sha2::Digest;
+        let h1 = Sha256::digest(&vec); // double hash
+        let h2 = Sha256::digest(&h1);
+        assert_eq!(sig_hash, LegacySighash::from_slice(&h2).unwrap());
     }
 
     let msg = bitcoin::secp256k1::Message::from_slice(sig_hash.as_byte_array()).unwrap();
